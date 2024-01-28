@@ -441,9 +441,7 @@ GroupSocialAutomation.Events:RegisterEvent("PLAYER_ENTERING_WORLD", function (_,
 	self.db.generalSettings = GroupSocialAutomation_Funcs.getGeneralSettings
 	self.db.getLfdSetting = GroupSocialAutomation_Funcs.getLfdSetting
 	self.db.getGeneralSetting = GroupSocialAutomation_Funcs.getGeneralSetting
-	for _, closure in ipairs(GroupSocialAutomation.Events.OnDbReadyCallbacks) do
-		closure(self.db)
-	end
+	GroupSocialAutomation.Events:Trigger("DbReady", self.db)
 
 	local BlizzardOptionsPanelTitle = "GroupSocialAutomation" -- the title on the left side that gives access to the actual addon config panels
 	LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable(BlizzardOptionsPanelTitle, options)

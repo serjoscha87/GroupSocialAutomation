@@ -1,16 +1,19 @@
 
 GroupSocialAutomation.CURRENT_LFD_PARTY = nil
 GroupSocialAutomation.CURRENT_LFD_PARTY_READY = false
+GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID = nil
 
--- custom event of this addon (can only be bound from one place! all other handler attachments will override the previous handler)
+-- custom event of this addon (can only be bound from one place! all other handler attachments will override the previous handler | EDIT: now that we got a new custom event system, this could be easily be bindable from anywhere with a litte effort)
 -- fires when LFD group is INITIALLY ready (and all players are connected)
-GroupSocialAutomation.Events.LFD_READY = function ()
+GroupSocialAutomation.Events.LFD_READY = function (partyGUID)
 	local delay = GroupSocialAutomation_Funcs.getLfdSetting("wait_time_after_join")
 
 	local possibleMsgs = GroupSocialAutomation_Funcs.getPossibleMessages("g")
 	GroupSocialAutomation_Funcs.doSocial(possibleMsgs, "HELLO", delay)
 
 	GroupSocialAutomation.CURRENT_LFD_PARTY_READY = true
+
+	GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID = partyGUID
 end
 
 local playerLevels = {}
@@ -25,6 +28,8 @@ GroupSocialAutomation.Events:RegisterEvent("GROUP_JOINED", function (_, event, c
 	GroupSocialAutomation.CURRENT_LFD_PARTY = partyGUID
 
 	print("GROUP_JOINED: " .. category .. " / " .. partyGUID)
+	print("LFD_PARTY_LAST_ID: " .. GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID)
+	print("LAST AND NEW THE SAME? " .. (partyGUID == GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID))
 
 	local awaitGroupConnected = GroupSocialAutomation_Funcs.getLfdSetting("wait_until_all_connected")
 	if awaitGroupConnected then
@@ -52,13 +57,13 @@ GroupSocialAutomation.Events:RegisterEvent("GROUP_JOINED", function (_, event, c
 					local playerLevel = UnitLevel(partySlotStr)
 					playerLevels[playerName] = playerLevel
 				end
-				GroupSocialAutomation.Events:LFD_READY()
+				GroupSocialAutomation.Events:LFD_READY(partyGUID)
 		    end
 
 		end
 		doAwaitGroupConnected()
 	else
-		GroupSocialAutomation.Events:LFD_READY()
+		GroupSocialAutomation.Events:LFD_READY(partyGUID)
 	end
 
 end)
@@ -70,15 +75,43 @@ GroupSocialAutomation.Events:RegisterEvent("PARTY_MEMBER_ENABLE", function (self
 end)
 ]]
 
--- ...
-GroupSocialAutomation.Events:RegisterEvent("CHAT_MSG_SYSTEM", function (_, _, a, b, c)
-	--ERR_INSTANCE_GROUP_ADDED_S  -> "%s ist der Instanzgruppe beigetreten"
-	print(">>" .. a .. " -> " .. b .. " -> " .. c)
+-- custom lfd player join +  leave behaviour
+GroupSocialAutomation.Events:RegisterEvent("CHAT_MSG_SYSTEM", function (_, _, text)
+	--[[
+	LFD GROUPS
+	--]]  
+	-- JOIN
+	local pattern = ERR_INSTANCE_GROUP_ADDED_S:gsub("%%s", "([^%%s]+)") -- ERR_INSTANCE_GROUP_ADDED_S => "%s ist der Instanzgruppe beigetreten"
+    local playerName = string.match(text, pattern)
+
+    if playerName ~= nil then
+    	playerName = GroupSocialAutomation_Funcs.normalizePlayerName(playerName)
+		GroupSocialAutomation.Events:Trigger("LFD_MEMBER_JOINED", playerName)
+	end
+
+	-- LEAVE
+	local pattern = ERR_INSTANCE_GROUP_REMOVED_S:gsub("%%s", "([^%%s]+)") -- ERR_INSTANCE_GROUP_REMOVED_S => "%s hat die Instanzgruppe verlassen."
+    local playerName = string.match(text, pattern)
+
+    if playerName ~= nil then
+    	playerName = GroupSocialAutomation_Funcs.normalizePlayerName(playerName)
+		GroupSocialAutomation.Events:Trigger("LFD_MEMBER_LEFT", playerName)
+	end
+
+	-- =============================
+
 end)
 
-GroupSocialAutomation.Events:OnDbReady(function (db)	
-	if db.getLfdSetting("congratulate_on_level_up", false) then
-		GroupSocialAutomation.Events:RegisterEvent("GROUP_ROSTER_UPDATE", function ()
+GroupSocialAutomation.Events:On("LFD_MEMBER_JOINED", function(playerName)
+	print("LFD MEMBER JOINED!! ", playerName)
+end)
+GroupSocialAutomation.Events:On("LFD_MEMBER_LEFT", function(playerName)
+	print("LFD MEMBER LEFT!! ", playerName)
+end)
+
+--GroupSocialAutomation.Events:On("DbReady", function (db)
+	GroupSocialAutomation.Events:RegisterEvent("GROUP_ROSTER_UPDATE", function ()
+		if GroupSocialAutomation.db ~= nil and GroupSocialAutomation.db.getLfdSetting("congratulate_on_level_up", false) then
 			if not GroupSocialAutomation.CURRENT_LFD_PARTY_READY then
 				return
 			end
@@ -89,13 +122,22 @@ GroupSocialAutomation.Events:OnDbReady(function (db)
 				if playerName ~= nil and playerLevel ~= nil then
 					if playerLevels[playerName] ~= playerLevel then
 						print(playerName .. " -> hatte ein level up! Vorher: " .. playerLevels[playerName] .. " - Jetzt: " .. playerLevel)
+						C_Timer.After(1, function()
+							GroupSocialAutomation_Funcs.doSocial("GZ " .. playerName .. "!", "BYE", playerName)
+						end)
 						playerLevels[playerName] = playerLevel
 					end
 				end
 			end
-		end)
-	end
+		end
+	end)
+--end)
+-- das hier wird auch gefeuert wenn jemand ein level up hat...
+--[[
+GroupSocialAutomation.Events:RegisterEvent("UNIT_LEVEL", function ()
+	print("UNIT_LEVEL!")
 end)
+]]
 
 GroupSocialAutomation.Events:RegisterEvent("LFG_COMPLETION_REWARD", function ()
 	local possibleMsgs = GroupSocialAutomation_Funcs.getPossibleMessages("f")
@@ -108,9 +150,4 @@ end)
 GroupSocialAutomation.Events:RegisterEvent("GROUP_LEFT", function ()
 	GroupSocialAutomation.CURRENT_LFD_PARTY = nil
 	GroupSocialAutomation.CURRENT_LFD_PARTY_READY = false
-end)
-
--- test ... wird das gefeuert wenn wer level up hat?
-GroupSocialAutomation.Events:RegisterEvent("UNIT_LEVEL", function ()
-	print("UNIT_LEVEL!")
 end)

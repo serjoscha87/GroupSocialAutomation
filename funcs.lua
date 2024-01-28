@@ -61,15 +61,23 @@ GroupSocialAutomation_Funcs = {
         return translatedValue or string.format("[!T] %s", key)
     end,
 
-    doSocial = function(messageTable, emoteStr, delay)
+    --[[
+    @param emote table<emoteIdStr, emoteTarget> | string<emoteIdStr>
+    ]]
+    doSocial = function(messageTable, emote, delay)
     
         local rndMsgIndex = math.random(#messageTable)
         local msg = messageTable[rndMsgIndex]
         
         local outputSocial = function ()
             SendChatMessage(msg, "INSTANCE_CHAT") -- TODO instance chat may not be avail @ premade and may also not work in raids...
-            if emoteStr ~= nil then
-                DoEmote(emoteStr, "none")
+            if emote ~= nil then
+                if type(emote) == "table" then
+                    local emoteIdStr, emoteTarget = unpack(emote) 
+                    DoEmote(emoteIdStr, emoteTarget)
+                else
+                    DoEmote(emote, "none") -- "none" => make sure the emore is not executed on a target
+                end
             end
         end
 
@@ -144,6 +152,14 @@ GroupSocialAutomation_Funcs = {
 
         return msgStack
 
+    end,
+
+    -- returns the playername without the server (if the playername even has a server within)
+    normalizePlayerName = function(playerName)
+        if playerName ~= nil then
+            local pattern = "([^%-%s]+)"
+            return string.match(playerName, pattern)
+        end
     end
     
 }

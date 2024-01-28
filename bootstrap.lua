@@ -3,9 +3,27 @@ GroupSocialAutomation = LibStub("AceAddon-3.0"):NewAddon("GroupSocialAutomation"
 
 GroupSocialAutomation.Events = LibStub("LibMoreEvents-1.0")
 
-GroupSocialAutomation.Events.OnDbReadyCallbacks = {} -- for internal use
-GroupSocialAutomation.Events.OnDbReady = function(self, closure)
-	table.insert(GroupSocialAutomation.Events.OnDbReadyCallbacks, closure)
+--[[
+Note on events:
+- for Blizzard game events use: GroupSocialAutomation.Events:RegisterEvent
+- for custom events use: GroupSocialAutomation.Events:On 
+]]
+
+GroupSocialAutomation.Events.CustomCallbacks = {} -- for internal use. Use :On to bind custom events (and :Trigger to ... trigger them)
+GroupSocialAutomation.Events.On = function(self, event, closure)
+	if GroupSocialAutomation.Events.CustomCallbacks[event] == nil then
+		GroupSocialAutomation.Events.CustomCallbacks[event] = {}
+	end
+	table.insert(GroupSocialAutomation.Events.CustomCallbacks[event], closure)
+end
+
+GroupSocialAutomation.Events.Trigger = function(self, event, ...)
+	if GroupSocialAutomation.Events.CustomCallbacks[event] == nil or type(GroupSocialAutomation.Events.CustomCallbacks[event]) ~= "table" then
+		return
+	end
+	for _, closure in ipairs(GroupSocialAutomation.Events.CustomCallbacks[event]) do
+		closure(...)
+	end
 end
 
 GroupSocialAutomation.ADDON_NAME = "GroupSocialAutomation"
