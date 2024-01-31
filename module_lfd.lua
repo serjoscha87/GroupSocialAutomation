@@ -19,17 +19,21 @@ end
 local playerLevels = {}
 
 -- Fired when the player enters a group
-GroupSocialAutomation.Events:RegisterEvent("GROUP_JOINED", function (_, event, category, partyGUID)
+--[[GroupSocialAutomation.Events:RegisterEvent("GROUP_JOINED", function (_, event, category, partyGUID)
 
-	if category ~= 2 then
+	if category ~= 2 or IsInRaid() then
 		return
 	end
 
 	GroupSocialAutomation.CURRENT_LFD_PARTY = partyGUID
 
 	print("GROUP_JOINED: " .. category .. " / " .. partyGUID)
-	print("LFD_PARTY_LAST_ID: " .. GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID)
-	print("LAST AND NEW THE SAME? " .. (partyGUID == GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID))
+	print("LFD_PARTY_LAST_ID: " .. (GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID or "--"))
+	if partyGUID == GroupSocialAutomation.CURRENT_LFD_PARTY_LAST_ID then
+		print("LAST AND NEW ARE THE SAME!")
+	else
+		print("LAST AND NEW ARE !!NOT!! THE SAME!")
+	end
 
 	local awaitGroupConnected = GroupSocialAutomation_Funcs.getLfdSetting("wait_until_all_connected")
 	if awaitGroupConnected then
@@ -66,7 +70,7 @@ GroupSocialAutomation.Events:RegisterEvent("GROUP_JOINED", function (_, event, c
 		GroupSocialAutomation.Events:LFD_READY(partyGUID)
 	end
 
-end)
+end)]]
 
 --[[
 GroupSocialAutomation.Events:RegisterEvent("PARTY_MEMBER_ENABLE", function (self, event, UnitId)
@@ -76,10 +80,15 @@ end)
 ]]
 
 -- custom lfd player join +  leave behaviour
-GroupSocialAutomation.Events:RegisterEvent("CHAT_MSG_SYSTEM", function (_, _, text)
-	--[[
+--[[GroupSocialAutomation.Events:RegisterEvent("CHAT_MSG_SYSTEM", function (_, _, text)
+
+	if IsInRaid() then 
+		return
+	end
+
+	- -[ [
 	LFD GROUPS
-	--]]  
+	--] ]  
 	-- JOIN
 	local pattern = ERR_INSTANCE_GROUP_ADDED_S:gsub("%%s", "([^%%s]+)") -- ERR_INSTANCE_GROUP_ADDED_S => "%s ist der Instanzgruppe beigetreten"
     local playerName = string.match(text, pattern)
@@ -100,7 +109,7 @@ GroupSocialAutomation.Events:RegisterEvent("CHAT_MSG_SYSTEM", function (_, _, te
 
 	-- =============================
 
-end)
+end)]]
 
 GroupSocialAutomation.Events:On("LFD_MEMBER_JOINED", function(playerName)
 	print("LFD MEMBER JOINED!! ", playerName)
@@ -110,13 +119,15 @@ GroupSocialAutomation.Events:On("LFD_MEMBER_LEFT", function(playerName)
 end)
 
 --GroupSocialAutomation.Events:On("DbReady", function (db)
-	GroupSocialAutomation.Events:RegisterEvent("GROUP_ROSTER_UPDATE", function ()
+	--[[GroupSocialAutomation.Events:RegisterEvent("GROUP_ROSTER_UPDATE", function ()
 		if GroupSocialAutomation.db ~= nil and GroupSocialAutomation.db.getLfdSetting("congratulate_on_level_up", false) then
 			if not GroupSocialAutomation.CURRENT_LFD_PARTY_READY then
 				return
 			end
 			for i=1, 4 do
 				local partySlotStr = 'party'..i
+				-- todo hier gibt es noch probleme wenn die gruppe schon ready ist, aber leute verlassen / wieder joinen - dann knallt es
+				--local playerConnected = UnitIsConnected(partySlotStr)
 				local playerName = UnitName(partySlotStr)
 				local playerLevel = UnitLevel(partySlotStr)
 				if playerName ~= nil and playerLevel ~= nil then
@@ -130,7 +141,7 @@ end)
 				end
 			end
 		end
-	end)
+	end)]]
 --end)
 -- das hier wird auch gefeuert wenn jemand ein level up hat...
 --[[

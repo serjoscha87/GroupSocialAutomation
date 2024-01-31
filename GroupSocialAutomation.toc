@@ -40,3 +40,6 @@ options_defaults.lua
 options.lua
 
 module_lfd.lua
+module_raid.lua
+module_mythic_premade.lua
+module_misc.lua

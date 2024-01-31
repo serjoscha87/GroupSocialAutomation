@@ -66,6 +66,11 @@ GroupSocialAutomation_Funcs = {
     ]]
     doSocial = function(messageTable, emote, delay)
     
+        if type(messageTable) == "number" then
+            print("GroupSocialAutomation error: messageTable is not a table but a number with the value >"..messageTable.."<")
+            return
+        end
+
         local rndMsgIndex = math.random(#messageTable)
         local msg = messageTable[rndMsgIndex]
         
