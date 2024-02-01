@@ -57,6 +57,7 @@ end)
 -- custom [lfd & lfr] player [join & leave] event
 GroupSocialAutomation.Events:RegisterEvent("CHAT_MSG_SYSTEM", function (_, _, text)
 	for join_leave_id, join_leave_game_str in pairs({JOINED = ERR_INSTANCE_GROUP_ADDED_S, LEFT = ERR_INSTANCE_GROUP_REMOVED_S}) do
+		-- ERR_INSTANCE_GROUP_... -> both LFR + LFD
 		local pattern = join_leave_game_str:gsub("%%s", "([^%%s]+)") -- adjust the string.format() string to become a regular expression we can use to match the player name against
 		--print(pattern)
 		--print(join_leave_id)
@@ -123,9 +124,21 @@ end)
 
 -- =======================================================
 
+GroupSocialAutomation.IN_ANY_PARTY = false
+GroupSocialAutomation.LAST_PARTY_ID = nil
+GroupSocialAutomation.CURRENT_GROUP_ROSTER = {} -- without having this here the addon causes an nil access error when reloading the interface within a dungeon
 GroupSocialAutomation.Events:RegisterEvent("GROUP_JOINED"--[[when the player him self joins a group]], function (_, event, category, partyGUID)
 	GroupSocialAutomation.CURRENT_GROUP_ROSTER = {}
 	GroupSocialAutomation.CURRENT_GROUP_REACHED_MAX_ONCE = false -- var to keep track of the current group we are in has ever been at member cap
+	GroupSocialAutomation.IN_ANY_PARTY = true
+	if GroupSocialAutomation.LAST_PARTY_ID == partyGUID then
+		print("SAME PARTY AS LAST TIME!!")
+	end
+	GroupSocialAutomation.LAST_PARTY_ID = partyGUID
+end)
+
+GroupSocialAutomation.Events:RegisterEvent("GROUP_LEFT", function ()
+	GroupSocialAutomation.IN_ANY_PARTY = false
 end)
 
 local partySizes = {
@@ -136,14 +149,21 @@ local partySizes = {
 
 GroupSocialAutomation.Events:RegisterEvent("GROUP_ROSTER_UPDATE", function ()
 
+	if not IsInGroup() then return end -- hmmmm... for this is the GROUP_ROSTER_UPDATE event handler it should implicite that we are in a group... just here to check if it removes the "you are not in a party" spam
+
+	local _, instanceType = IsInInstance()
+
+	if instanceType == "none" or not GroupSocialAutomation.IN_ANY_PARTY then
+		return
+	end
+
 	local tempGroupRoster = {}
 	local tempGroupRosterCount = 0 -- tracks the amount of connected players for this update
 
 	local newMembers = {} -- will be filled with the players that have JOINED the group since the last time GROUP_ROSTER_UPDATE tirggered
+	-- todo check if this is always only one (sollte eig. so sein)
+	local goneMembers = {}
 
-	local _, instanceType = IsInInstance()
-
-	--if instanceType == nil or partySizes[instanceType] == nil then -- die instanceType == nil prüfung sollten wir uns eig sparen können!
 	if partySizes[instanceType] == nil then
 		return
 	end
@@ -152,37 +172,59 @@ GroupSocialAutomation.Events:RegisterEvent("GROUP_ROSTER_UPDATE", function ()
 	for i=1, partySizes[instanceType]-1 do
 		local partySlotStr = 'party'..i
 
-		local playerConnected = UnitIsConnected(partySlotStr)
-		local playerName = UnitName(partySlotStr)
-		local playerLevel = UnitLevel(partySlotStr)
+		if UnitIsConnected(partySlotStr) then
 
-		if playerConnected and type(playerLevel) == "number" and playerLevel > 0 then
-			--[[table.insert(tempGroupRoster, {
-				playerName = playerName,
-				playerLevel = playerLevel
-			})]]
+			local playerName = UnitName(partySlotStr)
+			local playerLevel = UnitLevel(partySlotStr)
 
-			tempGroupRosterCount = tempGroupRosterCount + 1
+			if type(playerLevel) == "number" and playerLevel > 0 then
 
-			tempGroupRoster[playerName] = {
-				playerLevel = playerLevel,
-				playerName = playerName
-			}
+				tempGroupRosterCount = tempGroupRosterCount + 1
 
-			if GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName] == nil then
-				table.insert(newMembers, tempGroupRoster[playerName]) 
-			end
+				tempGroupRoster[playerName] = {
+					playerLevel = playerLevel,
+					playerName = playerName
+				}
 
-			-- check for level up .. TODO just make event out of this
-			if instanceType == "party" then
-				if GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName] ~= nil and GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName].playerLevel < playerLevel then
-					print (playerName .. " hatte ein level up! Vorher: " .. GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName].playerLevel .. " & jetzt: " .. playerLevel)
-					GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName].playerLevel = playerLevel
+				-- if the current iterated player was not part of the table created in the last GROUP_ROSTER_UPDATE its obviously a new play - store that information
+				if GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName] == nil then
+					table.insert(newMembers, tempGroupRoster[playerName]) 
 				end
+
+				-- check for level up .. TODO just make event out of this
+				if instanceType == "party" then
+					if GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName] ~= nil and GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName].playerLevel < playerLevel then
+						GroupSocialAutomation.Events:Trigger("LFD_LFR_MEMBER_LEVELED_UP", 
+							playerName, 
+							GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName].playerLevel, -- previous level (we could actually just do playerLevel-1 for this rather then accessesing the table that fancy way)
+							playerLevel -- new level
+						)
+						GroupSocialAutomation.CURRENT_GROUP_ROSTER[playerName].playerLevel = playerLevel
+					end
+				end
+
 			end
 
 		end
 	end
+
+	-- find members that left the group
+	for playerName, playerData in pairs(GroupSocialAutomation.CURRENT_GROUP_ROSTER) do
+		if tempGroupRoster[playerName] == nil then
+			table.insert(goneMembers, playerData) 
+		end
+	end
+
+	--[[
+	DevTool:AddData({
+		["CURRENT_GROUP_ROSTER"] = (GroupSocialAutomation.CURRENT_GROUP_ROSTER or nil),
+		["tempGroupRoster"] = tempGroupRoster,
+		["newMembers"] = newMembers,
+		["goneMembers"] = goneMembers,
+		["countNewMembers"] = #newMembers,
+		["countGoneMembers"] = #goneMembers
+	}, "foobar")
+	]]
 
 	local lastMemberCount = 0 -- will contain the amount of members the roster had the last time GROUP_ROSTER_UPDATE triggered
 	for _ in pairs(GroupSocialAutomation.CURRENT_GROUP_ROSTER) do lastMemberCount = lastMemberCount + 1 end
@@ -210,12 +252,19 @@ GroupSocialAutomation.Events:RegisterEvent("GROUP_ROSTER_UPDATE", function ()
 			--print("... and the party is !!!NOT!! FULL")
 			if lastMemberCount == maxPlayers then
 				--print("... but it WAS full BEFORE!")
-				GroupSocialAutomation.Events:Trigger("LFD_MEMBER_CAP_LOST", tempGroupRoster)
+				GroupSocialAutomation.Events:Trigger("LFD_MEMBER_CAP_LOST", tempGroupRoster, goneMembers)
 			else
 				--print("... and is WAS NOT full BEFORE!")
 				--GroupSocialAutomation.Events:Trigger("LFD_MEMBER_COUNT_UNCAPPED", tempGroupRoster, false)
 			end
 		end
+	end
+
+	if #newMembers > 0 then
+		GroupSocialAutomation.Events:Trigger("GROUP_MEMBER_JOINED", newMembers, GroupSocialAutomation.CURRENT_GROUP_REACHED_MAX_ONCE)
+	end
+	if #goneMembers > 0 then
+		GroupSocialAutomation.Events:Trigger("GROUP_MEMBER_LEFT", goneMembers)
 	end
 
 	GroupSocialAutomation.CURRENT_GROUP_ROSTER = tempGroupRoster
@@ -237,6 +286,12 @@ GroupSocialAutomation.Events:On("LFD_MEMBERS_CAPPED", function(roster, newMember
 		print("-> was already capped once before")
 	end
 	DevTool:AddData(roster, "LFD_MEMBERS_CAPPED current roster")
+
+	local delay = GroupSocialAutomation_Funcs.getLfdSetting("wait_time_after_join")
+
+	local possibleMsgs = GroupSocialAutomation_Funcs.getPossibleMessages("g")
+	GroupSocialAutomation_Funcs.doSocial(possibleMsgs, "HELLO", delay)
+
 end)
 
 GroupSocialAutomation.Events:On("LFD_MEMBER_CAP_LOST", function(roster)
@@ -247,4 +302,24 @@ GroupSocialAutomation.Events:On("LFD_MEMBER_CAP_LOST", function(roster)
 		print("... the group was NOT full before")
 	end]]
 	DevTool:AddData(roster, "LFD_MEMBER_CAP_LOST current roster")
+end)
+
+GroupSocialAutomation.Events:On("GROUP_MEMBER_JOINED", function(newMembers, groupCapReachedOnce) 
+	print("GROUP_MEMBER_JOINED")
+	if groupCapReachedOnce then
+		print("... and the group was already full once")
+	else
+		print("... but the group has not been capped since joining this group")
+	end
+	DevTool:AddData(newMembers, "GROUP_MEMBER_JOINED")
+end)
+
+GroupSocialAutomation.Events:On("GROUP_MEMBER_LEFT", function(goneMembers) 
+	print( (#goneMembers) .. " GROUP MEMBER(s) LEFT: 1. " .. goneMembers[1].playerName)
+	DevTool:AddData(goneMembers, "GROUP_MEMBER_LEFT")
+end)
+
+-- TODO das gehört dann def. ins lfd modul
+GroupSocialAutomation.Events:Trigger("LFD_LFR_MEMBER_LEVELED_UP", function(playerName, fromLevel, toLevel) 
+	print (playerName .. " hatte ein level up! Vorher: " .. fromLevel .. " & jetzt: " .. toLevel)
 end)

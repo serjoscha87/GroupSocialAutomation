@@ -109,6 +109,8 @@ GroupSocialAutomation_Funcs = {
     ]]
     getPossibleMessages = function (type --[["greetings" | "farewells" | "g" | "f"]])
 
+        if not IsInGroup() then return end
+
         if type ~= "greetings" and type ~= "farewells" and type ~= "g" and type ~= "f" then
             return -1
         end
@@ -119,7 +121,10 @@ GroupSocialAutomation_Funcs = {
         local db = GroupSocialAutomation.db
         --DevTool:AddData(db, "db @ getPossibleMessages")
 
-        local groupTypeIsLFD = GroupSocialAutomation.CURRENT_LFD_PARTY ~= nil
+        print(">>" .. IsInInstance())
+
+        local groupTypeIsLFD = IsInInstance() == "party" -- TODO this should also work for LFR -> check this
+        --local groupTypeIsLFD = GroupSocialAutomation.CURRENT_LFD_PARTY ~= nil
         --local groupTypeIsLFD = true -- ONLY FOR TESTING
         
         local msgLang = nil
